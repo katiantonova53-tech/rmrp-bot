@@ -1,20 +1,9 @@
-import os
 import telebot
 from telebot import types
-from flask import Flask
 
-# 1. Твой личный токен
 TOKEN = '8963833302:AAF9GkegKkWgfCFtAFRonPYQR7-oQZDXBlI'
 bot = telebot.TeleBot(TOKEN)
 
-# 2. Создаем пустышку-сервер для Render, чтобы он не отключал бесплатный тариф
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "Бот рулетки RMRP работает 24/7!", 200
-
-# 3. База данных пользователей
 user_data = {}
 
 RED_NUMBERS = {1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36}
@@ -29,12 +18,10 @@ def get_properties(val):
     parity = "🔢 Четное" if num % 2 == 0 else "🔀 Нечетное"
     size = "📉 Малое (1-18)" if 1 <= num <= 18 else "📈 Большое (19-36)"
     
-    # Определение Дюжины
     if 1 <= num <= 12: fraction = "📦 1-я Дюжина"
     elif 13 <= num <= 24: fraction = "📦 2-я Дюжина"
     else: fraction = "📦 3-я Дюжина"
         
-    # Определение Колонны (Столбца)
     if num % 3 == 1: column = "📊 1-я Колонна"
     elif num % 3 == 2: column = "📊 2-я Колонна"
     else: column = "📊 3-я Колонна"
@@ -50,7 +37,6 @@ def analyze_game(chat_id):
     if len(history) < trigger:
         return f"📊 Статистика: {len(history)}/{trigger} чисел для анализа шансов."
 
-    # Анализ равных шансов (Цвет, Чет, Размер)
     last_elements = history[-trigger:]
     props = [get_properties(v) for v in last_elements]
     
@@ -60,8 +46,6 @@ def analyze_game(chat_id):
 
     signals = []
     has_active_signal = False
-
-    # Расчет суммы догона на равные шансы (умножение на 2)
     step = data['current_step']
     martingale_bet = base_bet * (2 ** step)
 
@@ -86,21 +70,6 @@ def analyze_game(chat_id):
         signals.append(f"⚠️ СИГНАЛ: Большие X{trigger}!\n👉 СТАВЬ: на МАЛЫЕ 📉\n💵 СУММА: {martingale_bet:,} $")
         has_active_signal = True
 
-    # Глубокий анализ Дюжин/Колонн (триггер длиннее в 1.5 раза)
-    trigger_3x = int(trigger * 1.5)
-    if len(history) >= trigger_3x:
-        last_elements_3x = history[-trigger_3x:]
-        all_props_3x = [get_properties(v) for v in last_elements_3x]
-        
-        # Считаем догон для Дюжин (умножение на 1.5 для профита)
-        bet_3x = int(base_bet * (1.5 ** step))
-        
-        for item, name in [("📦 1-я Дюжина", "1st 12"), ("📦 2-я Дюжина", "2nd 12"), ("📦 3-я Дюжина", "3rd 12")]:
-            if not any(p[3] == item for p in all_props_3x):
-                signals.append(f"🔥 МЕГА-СИГНАЛ (3х): {name} не выпадала {trigger_3x} раз!\n👉 СТАВЬ: на {name}\n💵 СУММА: {bet_3x:,} $")
-                has_active_signal = True
-
-    # Управляем шагами догона
     if has_active_signal:
         data['current_step'] += 1
     else:
@@ -131,7 +100,7 @@ def get_main_keyboard():
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
     user_data[message.chat.id] = {'history': [], 'streak': 4, 'base_bet': 1000, 'current_step': 0}
-    bot.reply_to(message, "⚙️ Бот рулетки RMRP запущен на вечном сервере Render 24/7!\nВключен автоматический менеджер догона.", reply_markup=get_main_keyboard())
+    bot.reply_to(message, "⚙️ Бот рулетки RMRP успешно перезапущен!\nВключен автоматический менеджер догона.", reply_markup=get_main_keyboard())
 
 @bot.message_handler(func=lambda message: message.text == '⚙️ Настройки')
 def settings_menu(message):
@@ -144,7 +113,6 @@ def settings_menu(message):
     btn_str5 = types.InlineKeyboardButton("Серия: 5 чисел", callback_data="set_str_5")
     btn_bet1 = types.InlineKeyboardButton("Ставка: 1,000$", callback_data="set_bet_1000")
     btn_bet5 = types.InlineKeyboardButton("Ставка: 5,000$", callback_data="set_bet_5000")
-    
     markup.row(btn_str4, btn_str5)
     markup.row(btn_bet1, btn_bet5)
     
@@ -182,21 +150,14 @@ def handle_msg(message):
 
     if is_valid_num or is_double_zero:
         user_data[chat_id]['history'].append(text)
-        
         if len(user_data[chat_id]['history']) > 20:
             user_data[chat_id]['history'].pop(0)
             
         analysis_result = analyze_game(chat_id)
         recent_numbers = " ➔ ".join(user_data[chat_id]['history'][-6:])
-        
         response = f"📋 Лента: {recent_numbers}\n──────────────────{analysis_result}"
         bot.send_message(chat_id, response, reply_markup=get_main_keyboard())
 
-# Функция запуска и веб-сервера, и бота одновременно
 if __name__ == '__main__':
-    import threading
-    # Запускаем фоновый опрос Telegram
-    threading.Thread(target=bot.infinity_polling, daemon=True).start()
-    # Запускаем веб-заглушку для Render
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host='0.0.0.0', port=port)
+    print("Запуск бота...")
+    bot.infinity_polling()
